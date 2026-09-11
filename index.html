@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>지문 로그인</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;font-family:-apple-system,"Malgun Gothic",sans-serif;background:#0f172a;color:#e2e8f0}
+    .wrap{max-width:720px;margin:0 auto;padding:20px}
+    .hero{background:linear-gradient(135deg,#1e293b,#0b1220);border:1px solid #334155;border-radius:20px;padding:40px 24px;text-align:center;margin-bottom:20px}
+    .hero .state{font-size:14px;color:#94a3b8;letter-spacing:2px}
+    .hero .who{font-size:34px;font-weight:800;margin:10px 0 4px}
+    .hero .when{font-size:14px;color:#94a3b8}
+    .hero.on{border-color:#22c55e;box-shadow:0 0 40px rgba(34,197,94,.25)}
+    .hero.on .who{color:#4ade80}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:16px}
+    h2{font-size:15px;margin:0 0 12px;color:#cbd5e1}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{padding:8px 6px;text-align:left;border-bottom:1px solid #334155}
+    th{color:#94a3b8;font-weight:600}
+    input,button{font-size:14px;border-radius:8px;border:1px solid #475569}
+    input{background:#0f172a;color:#e2e8f0;padding:9px}
+    button{padding:9px 14px;border:0;font-weight:700;color:#fff;cursor:pointer}
+    .btn{background:#3b82f6}.btn-red{background:#ef4444}.btn-gray{background:#475569}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .muted{color:#94a3b8;font-size:13px}
+    .hidden{display:none}
+    .badge{padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700}
+    .b-in{background:#14532d;color:#86efac}.b-no{background:#3f1d1d;color:#fca5a5}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero" id="hero">
+      <div class="state">FINGERPRINT LOGIN</div>
+      <div class="who" id="who">지문을 스캔하세요</div>
+      <div class="when" id="when">대기 중…</div>
+    </div>
+
+    <!-- 최근 로그 -->
+    <div class="card">
+      <h2>📜 최근 로그인 기록</h2>
+      <table><thead><tr><th>시간</th><th>이름</th><th>ID</th><th>상태</th><th>일치도</th></tr></thead>
+        <tbody id="log"><tr><td colspan="5" class="muted">불러오는 중…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- 관리자 -->
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">🔐 관리자</h2>
+        <span id="admin-who" class="muted"></span>
+      </div>
+
+      <div id="login-box" class="row" style="margin-top:10px">
+        <input id="email" type="email" placeholder="관리자 이메일" style="flex:1;min-width:160px">
+        <input id="pw" type="password" placeholder="비밀번호" style="flex:1;min-width:120px">
+        <button class="btn" id="btn-login">로그인</button>
+      </div>
+
+      <div id="admin-box" class="hidden" style="margin-top:14px">
+        <div class="row">
+          <input id="uid" type="number" min="1" placeholder="지문 ID" style="width:100px">
+          <input id="uname" placeholder="이름" style="flex:1;min-width:120px">
+          <button class="btn" id="btn-add">사용자 등록</button>
+          <button class="btn-gray" id="btn-logout">로그아웃</button>
+        </div>
+        <table style="margin-top:12px"><thead><tr><th>ID</th><th>이름</th><th></th></tr></thead>
+          <tbody id="users"></tbody></table>
+      </div>
+      <div id="msg" class="muted" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, onValue, set, remove, query, limitToLast }
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+    // ▼▼▼ 여기에 firebaseConfig 붙여넣기 ▼▼▼
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+      projectId: "YOUR_PROJECT",
+      appId: "YOUR_APP_ID"
+    };
+    // ▲▲▲ 여기까지 ▲▲▲
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
+    let usersMap = {};   // fingerId -> name
+
+    // 사용자 명단 구독 (이름 조인 + 관리자 목록)
+    onValue(ref(db, "users"), (snap) => {
+      usersMap = snap.val() || {};
+      renderUsers();
+    });
+
+    // 현재 로그인(세션) 구독 -> 히어로 갱신
+    onValue(ref(db, "session/current"), (snap) => {
+      const s = snap.val();
+      const hero = document.getElementById("hero");
+      if (s && s.fingerId != null) {
+        const name = (usersMap[s.fingerId] && usersMap[s.fingerId].name) || ("ID " + s.fingerId);
+        hero.classList.add("on");
+        document.getElementById("who").textContent = "환영합니다, " + name + "님";
+        document.getElementById("when").textContent = fmt(s.at) + " · 일치도 " + (s.confidence ?? "-");
+      }
+    });
+
+    // 최근 로그 구독
+    onValue(query(ref(db, "events"), limitToLast(20)), (snap) => {
+      const rows = [];
+      snap.forEach(c => rows.push(c.val()));
+      rows.reverse();
+      const name = (fid) => (usersMap[fid] && usersMap[fid].name) || "-";
+      document.getElementById("log").innerHTML = rows.length ? rows.map(e =>
+        `<tr><td>${fmt(e.at)}</td><td>${esc(name(e.fingerId))}</td><td>${e.fingerId}</td>
+         <td><span class="badge ${e.action==='login'?'b-in':'b-no'}">${e.action==='login'?'로그인':'거부'}</span></td>
+         <td>${e.confidence ?? "-"}</td></tr>`).join("")
+        : `<tr><td colspan="5" class="muted">기록 없음</td></tr>`;
+    });
+
+    // ── 관리자 인증 ──
+    document.getElementById("btn-login").onclick = () => {
+      signInWithEmailAndPassword(auth,
+        document.getElementById("email").value, document.getElementById("pw").value)
+        .catch(e => msg("로그인 실패: " + e.code));
+    };
+    document.getElementById("btn-logout").onclick = () => signOut(auth);
+
+    onAuthStateChanged(auth, (user) => {
+      const logged = !!user;
+      document.getElementById("login-box").classList.toggle("hidden", logged);
+      document.getElementById("admin-box").classList.toggle("hidden", !logged);
+      document.getElementById("admin-who").textContent = logged ? user.email : "";
+      msg("");
+    });
+
+    // 사용자 등록/삭제
+    document.getElementById("btn-add").onclick = () => {
+      const id = document.getElementById("uid").value;
+      const nm = document.getElementById("uname").value.trim();
+      if (!id || !nm) { msg("지문 ID와 이름을 입력하세요"); return; }
+      set(ref(db, "users/" + id), { name: nm, createdAt: Date.now() })
+        .then(() => { msg("등록됨: " + id + " → " + nm);
+          document.getElementById("uid").value=""; document.getElementById("uname").value=""; })
+        .catch(e => msg("등록 실패: " + e.code));
+    };
+
+    function renderUsers() {
+      const isAdmin = !!auth.currentUser;
+      const ids = Object.keys(usersMap).sort((a,b)=>a-b);
+      document.getElementById("users").innerHTML = ids.length ? ids.map(id =>
+        `<tr><td>${id}</td><td>${esc(usersMap[id].name)}</td>
+          <td>${isAdmin?`<button class="btn-red" data-del="${id}">삭제</button>`:""}</td></tr>`).join("")
+        : `<tr><td colspan="3" class="muted">등록된 사용자 없음</td></tr>`;
+      document.querySelectorAll("[data-del]").forEach(b =>
+        b.onclick = () => remove(ref(db, "users/" + b.dataset.del)).catch(e=>msg("삭제 실패: "+e.code)));
+    }
+
+    // 유틸
+    function fmt(ts){ if(!ts) return "-"; const d=new Date(ts); return d.toLocaleString('ko-KR'); }
+    function esc(t){ return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+    function msg(t){ document.getElementById("msg").textContent = t; }
+  </script>
+</body>
+</html>

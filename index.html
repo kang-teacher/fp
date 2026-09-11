@@ -38,7 +38,6 @@
       <div class="when" id="when">대기 중…</div>
     </div>
 
-    <!-- 최근 로그 -->
     <div class="card">
       <h2>📜 최근 로그인 기록</h2>
       <table><thead><tr><th>시간</th><th>이름</th><th>ID</th><th>상태</th><th>일치도</th></tr></thead>
@@ -46,7 +45,6 @@
       </table>
     </div>
 
-    <!-- 관리자 -->
     <div class="card">
       <div class="row" style="justify-content:space-between">
         <h2 style="margin:0">🔐 관리자</h2>
@@ -80,29 +78,25 @@
     import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
-    // ▼▼▼ 여기에 firebaseConfig 붙여넣기 ▼▼▼
     const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_PROJECT.firebaseapp.com",
-      databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
-      projectId: "YOUR_PROJECT",
-      appId: "YOUR_APP_ID"
+      apiKey: "AIzaSyCVFwWyyH4ZqIhyK2In9S5DVm5zjuHjGA8",
+      authDomain: "amugona-ad02b.firebaseapp.com",
+      databaseURL: "https://amugona-ad02b-default-rtdb.firebaseio.com",
+      projectId: "amugona-ad02b",
+      storageBucket: "amugona-ad02b.firebasestorage.app",
+      messagingSenderId: "862176682217",
+      appId: "1:862176682217:web:064bec3dd0c9cc862ed078",
+      measurementId: "G-Z5DDQ6NJTQ"
     };
-    // ▲▲▲ 여기까지 ▲▲▲
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const auth = getAuth(app);
 
-    let usersMap = {};   // fingerId -> name
+    let usersMap = {};
 
-    // 사용자 명단 구독 (이름 조인 + 관리자 목록)
-    onValue(ref(db, "users"), (snap) => {
-      usersMap = snap.val() || {};
-      renderUsers();
-    });
+    onValue(ref(db, "users"), (snap) => { usersMap = snap.val() || {}; renderUsers(); });
 
-    // 현재 로그인(세션) 구독 -> 히어로 갱신
     onValue(ref(db, "session/current"), (snap) => {
       const s = snap.val();
       const hero = document.getElementById("hero");
@@ -114,7 +108,6 @@
       }
     });
 
-    // 최근 로그 구독
     onValue(query(ref(db, "events"), limitToLast(20)), (snap) => {
       const rows = [];
       snap.forEach(c => rows.push(c.val()));
@@ -127,7 +120,6 @@
         : `<tr><td colspan="5" class="muted">기록 없음</td></tr>`;
     });
 
-    // ── 관리자 인증 ──
     document.getElementById("btn-login").onclick = () => {
       signInWithEmailAndPassword(auth,
         document.getElementById("email").value, document.getElementById("pw").value)
@@ -140,10 +132,9 @@
       document.getElementById("login-box").classList.toggle("hidden", logged);
       document.getElementById("admin-box").classList.toggle("hidden", !logged);
       document.getElementById("admin-who").textContent = logged ? user.email : "";
-      msg("");
+      msg(""); renderUsers();
     });
 
-    // 사용자 등록/삭제
     document.getElementById("btn-add").onclick = () => {
       const id = document.getElementById("uid").value;
       const nm = document.getElementById("uname").value.trim();
@@ -165,8 +156,7 @@
         b.onclick = () => remove(ref(db, "users/" + b.dataset.del)).catch(e=>msg("삭제 실패: "+e.code)));
     }
 
-    // 유틸
-    function fmt(ts){ if(!ts) return "-"; const d=new Date(ts); return d.toLocaleString('ko-KR'); }
+    function fmt(ts){ if(!ts) return "-"; return new Date(ts).toLocaleString('ko-KR'); }
     function esc(t){ return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
     function msg(t){ document.getElementById("msg").textContent = t; }
   </script>

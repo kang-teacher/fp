@@ -9,6 +9,7 @@
     body{margin:0;font-family:-apple-system,"Malgun Gothic",sans-serif;background:#0f172a;color:#e2e8f0}
     .wrap{max-width:720px;margin:0 auto;padding:20px}
     .hidden{display:none}
+    /* 잠금 화면 */
     #gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
     .gate-card{background:linear-gradient(135deg,#1e293b,#0b1220);border:1px solid #334155;border-radius:24px;padding:48px 32px;text-align:center;max-width:420px;width:100%;position:relative}
     .ver{position:absolute;top:12px;right:16px;font-size:11px;color:#475569}
@@ -18,10 +19,13 @@
     .big{width:100%;padding:16px;border:0;border-radius:12px;font-size:17px;font-weight:800;color:#fff;background:#3b82f6;cursor:pointer}
     .gstatus{margin-top:16px;color:#cbd5e1;font-size:14px;min-height:20px}
     .cancel{margin-top:10px;background:#475569}
-    .hero{background:linear-gradient(135deg,#052e16,#0b1220);border:1px solid #22c55e;border-radius:20px;padding:36px 24px;text-align:center;margin-bottom:16px;box-shadow:0 0 40px rgba(34,197,94,.2)}
-    .hero .state{font-size:13px;color:#86efac;letter-spacing:2px}
-    .hero .who{font-size:30px;font-weight:800;margin:10px 0 4px;color:#4ade80}
-    .hero .when{font-size:13px;color:#94a3b8}
+    /* 로그인 후 환영 화면 (전체 화면) */
+    .welcome{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;background:radial-gradient(circle at 50% 30%,#052e16,#0f172a);animation:fadein .45s ease}
+    @keyframes fadein{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+    .welcome .check{font-size:70px}
+    .welcome .who{font-size:38px;font-weight:800;color:#4ade80;margin:14px 0 6px}
+    .welcome .when{color:#94a3b8;font-size:14px;margin-bottom:26px}
+    .welcome .hint{color:#64748b;font-size:13px;margin-top:26px}
     .card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:16px;margin-bottom:16px}
     h2{font-size:15px;margin:0 0 12px;color:#cbd5e1}
     table{width:100%;border-collapse:collapse;font-size:14px}
@@ -37,9 +41,10 @@
   </style>
 </head>
 <body>
+  <!-- 잠금 화면 -->
   <div id="gate">
     <div class="gate-card">
-      <div class="ver">ver 2</div>
+      <div class="ver">ver 3</div>
       <div class="ico">🔒</div>
       <h1>지문으로 로그인</h1>
       <p>버튼을 누른 뒤 센서에 손가락을 올리세요</p>
@@ -49,17 +54,17 @@
     </div>
   </div>
 
+  <!-- 로그인 후 화면 -->
   <div id="app" class="hidden">
-    <div class="wrap">
-      <div class="hero">
-        <div class="state">LOGGED IN</div>
-        <div class="who" id="who">환영합니다</div>
-        <div class="when" id="when"></div>
-      </div>
-      <div class="row" style="justify-content:flex-end;margin-bottom:16px">
-        <button class="btn-gray" id="btn-logout">로그아웃</button>
-      </div>
+    <section class="welcome">
+      <div class="check">✅</div>
+      <div class="who" id="wc-who">환영합니다</div>
+      <div class="when" id="wc-when"></div>
+      <button class="btn-gray" id="btn-logout">로그아웃</button>
+      <div class="hint">↓ 아래로 스크롤하면 기록·관리 화면</div>
+    </section>
 
+    <div class="wrap">
       <div class="card">
         <h2>📜 최근 로그인 기록</h2>
         <table><thead><tr><th>시간</th><th>이름</th><th>ID</th><th>상태</th><th>일치도</th></tr></thead>
@@ -97,7 +102,7 @@
     import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
-    console.log("✅ 지문 로그인 페이지 ver2 로드됨");
+    console.log("✅ 지문 로그인 페이지 ver3 로드됨");
 
     const firebaseConfig = {
       apiKey: "AIzaSyCVFwWyyH4ZqIhyK2In9S5DVm5zjuHjGA8",
@@ -114,7 +119,6 @@
     const auth = getAuth(app);
     const $ = (id) => document.getElementById(id);
 
-    // 서버-클라이언트 시계 오차 보정
     let serverOffset = 0;
     onValue(ref(db, ".info/serverTimeOffset"), (s) => { serverOffset = s.val() || 0; });
     const serverNow = () => Date.now() + serverOffset;
@@ -126,10 +130,10 @@
     let gateUnsub = null, gateAt = 0, timer = null;
     $("btn-fp").onclick = startLogin;
     $("btn-cancel").onclick = cancelLogin;
-    $("btn-logout").onclick = () => { try{localStorage.removeItem("fp_session");}catch(e){} showGate(); };
+    $("btn-logout").onclick = logout;
 
     function startLogin() {
-      gateAt = serverNow() - 1500;   // 이 시각(서버기준) 이후 스캔만 인정
+      gateAt = serverNow() - 1500;
       console.log("🟦 로그인 대기 시작, gateAt =", gateAt);
       gstatus("👉 센서에 손가락을 올려주세요…");
       $("btn-fp").classList.add("hidden"); $("btn-cancel").classList.remove("hidden");
@@ -147,24 +151,23 @@
     function cleanup(){ if(gateUnsub){gateUnsub();gateUnsub=null;} if(timer){clearTimeout(timer);timer=null;} }
     function resetBtns(){ $("btn-fp").classList.remove("hidden"); $("btn-cancel").classList.add("hidden"); }
 
+    // 로그인 상태는 '메모리에만' 유지 -> 새로고침하면 다시 잠금화면부터
     function loginWith(fid){
       const name = (usersMap[fid] && usersMap[fid].name) || ("ID " + fid);
-      const session = { fingerId: fid, name, at: Date.now() };
-      try { localStorage.setItem("fp_session", JSON.stringify(session)); } catch(e){}
-      showApp(session);
+      $("gate").classList.add("hidden");
+      $("app").classList.remove("hidden");
+      window.scrollTo(0, 0);
+      $("wc-who").textContent = "환영합니다, " + name + "님";
+      $("wc-when").textContent = "로그인 시간: " + new Date().toLocaleString("ko-KR");
     }
-    function showApp(s){
-      $("gate").classList.add("hidden"); $("app").classList.remove("hidden");
-      $("who").textContent = "환영합니다, " + s.name + "님";
-      $("when").textContent = "로그인 시간: " + new Date(s.at).toLocaleString("ko-KR");
+    function logout(){
+      $("app").classList.add("hidden");
+      $("gate").classList.remove("hidden");
+      resetBtns(); gstatus("");
     }
-    function showGate(){ $("app").classList.add("hidden"); $("gate").classList.remove("hidden"); resetBtns(); gstatus(""); }
-    function gstatus(t){ $("gstatus").textContent = t; }
 
-    (function initSession(){
-      let s=null; try{ s=JSON.parse(localStorage.getItem("fp_session")||"null"); }catch(e){}
-      if (s) showApp(s); else showGate();
-    })();
+    // 접속 시 항상 잠금 화면부터 (이전 로그인 자동복원 없음)
+    logout();
 
     // ── 로그 ──
     onValue(query(ref(db, "events"), limitToLast(20)), (snap) => {

@@ -10,7 +10,8 @@
     .wrap{max-width:720px;margin:0 auto;padding:20px}
     .hidden{display:none}
     #gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-    .gate-card{background:linear-gradient(135deg,#1e293b,#0b1220);border:1px solid #334155;border-radius:24px;padding:48px 32px;text-align:center;max-width:420px;width:100%}
+    .gate-card{background:linear-gradient(135deg,#1e293b,#0b1220);border:1px solid #334155;border-radius:24px;padding:48px 32px;text-align:center;max-width:420px;width:100%;position:relative}
+    .ver{position:absolute;top:12px;right:16px;font-size:11px;color:#475569}
     .gate-card .ico{font-size:56px}
     .gate-card h1{font-size:22px;margin:14px 0 6px}
     .gate-card p{color:#94a3b8;font-size:14px;margin:0 0 24px}
@@ -38,6 +39,7 @@
 <body>
   <div id="gate">
     <div class="gate-card">
+      <div class="ver">ver 2</div>
       <div class="ico">🔒</div>
       <h1>지문으로 로그인</h1>
       <p>버튼을 누른 뒤 센서에 손가락을 올리세요</p>
@@ -95,6 +97,8 @@
     import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
+    console.log("✅ 지문 로그인 페이지 ver2 로드됨");
+
     const firebaseConfig = {
       apiKey: "AIzaSyCVFwWyyH4ZqIhyK2In9S5DVm5zjuHjGA8",
       authDomain: "amugona-ad02b.firebaseapp.com",
@@ -110,28 +114,37 @@
     const auth = getAuth(app);
     const $ = (id) => document.getElementById(id);
 
+    // 서버-클라이언트 시계 오차 보정
+    let serverOffset = 0;
+    onValue(ref(db, ".info/serverTimeOffset"), (s) => { serverOffset = s.val() || 0; });
+    const serverNow = () => Date.now() + serverOffset;
+
     let usersMap = {};
     onValue(ref(db, "users"), (snap) => { usersMap = snap.val() || {}; renderUsers(); });
 
-    // ── 지문 로그인 게이트 (session/current 의 '다음 변경'을 잡음) ──
-    let sessUnsub = null, sawInitial = false, timer = null;
+    // ── 지문 로그인 게이트 ──
+    let gateUnsub = null, gateAt = 0, timer = null;
     $("btn-fp").onclick = startLogin;
     $("btn-cancel").onclick = cancelLogin;
     $("btn-logout").onclick = () => { try{localStorage.removeItem("fp_session");}catch(e){} showGate(); };
 
     function startLogin() {
-      sawInitial = false;
+      gateAt = serverNow() - 1500;   // 이 시각(서버기준) 이후 스캔만 인정
+      console.log("🟦 로그인 대기 시작, gateAt =", gateAt);
       gstatus("👉 센서에 손가락을 올려주세요…");
       $("btn-fp").classList.add("hidden"); $("btn-cancel").classList.remove("hidden");
-      sessUnsub = onValue(ref(db, "session/current"), (snap) => {
+      gateUnsub = onValue(ref(db, "session/current"), (snap) => {
         const v = snap.val();
-        if (!sawInitial) { sawInitial = true; return; }   // 첫 콜백(현재 상태)은 무시
-        if (v && v.fingerId != null) { const fid = v.fingerId; cleanup(); loginWith(fid); }
+        console.log("🔎 session/current =", v);
+        if (v && v.fingerId != null && typeof v.at === "number" && v.at >= gateAt) {
+          console.log("🎉 로그인 인정! fingerId =", v.fingerId);
+          const fid = v.fingerId; cleanup(); loginWith(fid);
+        }
       });
       timer = setTimeout(() => { cleanup(); gstatus("⏱ 시간 초과. 다시 시도하세요."); resetBtns(); }, 60000);
     }
     function cancelLogin(){ cleanup(); gstatus(""); resetBtns(); }
-    function cleanup(){ if(sessUnsub){sessUnsub();sessUnsub=null;} if(timer){clearTimeout(timer);timer=null;} }
+    function cleanup(){ if(gateUnsub){gateUnsub();gateUnsub=null;} if(timer){clearTimeout(timer);timer=null;} }
     function resetBtns(){ $("btn-fp").classList.remove("hidden"); $("btn-cancel").classList.add("hidden"); }
 
     function loginWith(fid){

@@ -90,7 +90,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, onValue, set, remove, push, query, limitToLast }
+    import { getDatabase, ref, onValue, set, remove, query, limitToLast }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
     import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
       from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -108,30 +108,30 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
     const auth = getAuth(app);
+    const $ = (id) => document.getElementById(id);
 
     let usersMap = {};
     onValue(ref(db, "users"), (snap) => { usersMap = snap.val() || {}; renderUsers(); });
 
-    let reqRef = null, unsub = null, timer = null;
-    const $ = (id) => document.getElementById(id);
-
+    // ── 지문 로그인 게이트 (session/current 의 '다음 변경'을 잡음) ──
+    let sessUnsub = null, sawInitial = false, timer = null;
     $("btn-fp").onclick = startLogin;
     $("btn-cancel").onclick = cancelLogin;
     $("btn-logout").onclick = () => { try{localStorage.removeItem("fp_session");}catch(e){} showGate(); };
 
     function startLogin() {
-      reqRef = push(ref(db, "loginRequests"));
-      set(reqRef, { status: "pending", at: Date.now() });
+      sawInitial = false;
       gstatus("👉 센서에 손가락을 올려주세요…");
       $("btn-fp").classList.add("hidden"); $("btn-cancel").classList.remove("hidden");
-      unsub = onValue(reqRef, (snap) => {
+      sessUnsub = onValue(ref(db, "session/current"), (snap) => {
         const v = snap.val();
-        if (v && v.status === "approved" && v.fingerId != null) { const fid=v.fingerId; cleanup(true); loginWith(fid); }
+        if (!sawInitial) { sawInitial = true; return; }   // 첫 콜백(현재 상태)은 무시
+        if (v && v.fingerId != null) { const fid = v.fingerId; cleanup(); loginWith(fid); }
       });
-      timer = setTimeout(() => { cleanup(true); gstatus("⏱ 시간 초과. 다시 시도하세요."); resetBtns(); }, 60000);
+      timer = setTimeout(() => { cleanup(); gstatus("⏱ 시간 초과. 다시 시도하세요."); resetBtns(); }, 60000);
     }
-    function cancelLogin(){ cleanup(true); gstatus(""); resetBtns(); }
-    function cleanup(rm){ if(unsub){unsub();unsub=null;} if(timer){clearTimeout(timer);timer=null;} if(rm&&reqRef){remove(reqRef);} reqRef=null; }
+    function cancelLogin(){ cleanup(); gstatus(""); resetBtns(); }
+    function cleanup(){ if(sessUnsub){sessUnsub();sessUnsub=null;} if(timer){clearTimeout(timer);timer=null;} }
     function resetBtns(){ $("btn-fp").classList.remove("hidden"); $("btn-cancel").classList.add("hidden"); }
 
     function loginWith(fid){
@@ -153,6 +153,7 @@
       if (s) showApp(s); else showGate();
     })();
 
+    // ── 로그 ──
     onValue(query(ref(db, "events"), limitToLast(20)), (snap) => {
       const rows=[]; snap.forEach(c=>rows.push(c.val())); rows.reverse();
       const nm=(fid)=>(usersMap[fid]&&usersMap[fid].name)||"-";
@@ -162,6 +163,7 @@
          <td>${e.confidence ?? "-"}</td></tr>`).join("") : `<tr><td colspan="5" class="muted">기록 없음</td></tr>`;
     });
 
+    // ── 관리자 ──
     $("btn-login").onclick = () => signInWithEmailAndPassword(auth, $("email").value, $("pw").value).catch(e=>msg("로그인 실패: "+e.code));
     $("btn-adlogout").onclick = () => signOut(auth);
     onAuthStateChanged(auth, (user) => {
